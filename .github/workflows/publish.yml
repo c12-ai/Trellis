@@ -18,7 +18,8 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Same image as ci.yml, so the release runs the tests CI already passed.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       # npm provenance attestation.
