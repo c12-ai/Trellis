@@ -1,3 +1,5 @@
+> **C12 fork.** This is [c12-ai/Trellis](https://github.com/c12-ai/Trellis), C12's fork of [mindfold-ai/trellis](https://github.com/mindfold-ai/trellis), published on npm as `c12-trellis` (`npm install -g c12-trellis`). What differs and how it is maintained: [docs/c12-fork.md](docs/c12-fork.md). The rest of this README is upstream's.
+
 <p align="center">
 <picture>
 <source srcset="assets/trellis.png" media="(prefers-color-scheme: dark)">
