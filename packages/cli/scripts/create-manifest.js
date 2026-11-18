@@ -44,7 +44,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MANIFESTS_DIR = path.join(__dirname, "../src/migrations/manifests");
-const PACKAGE_NAME = "@mindfoldhq/trellis";
+const PACKAGE_NAME = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "../package.json"), "utf-8"),
+).name;
 
 /**
  * Check whether `version` is already published on npm. Returns false on network

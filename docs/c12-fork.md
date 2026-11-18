@@ -17,7 +17,15 @@
 npm install -g c12-trellis      # or: npx c12-trellis@<version> update
 ```
 
-BIC's iChor checkout pins a GitHub Release tarball instead (`.tools/trellis.lock`, installed by `ichor setup`).
+`c12-trellis` installs the same `trellis` and `tl` commands as upstream. If upstream is installed globally, remove it first, or npm stops with `EEXIST` on the command links:
+
+```bash
+npm uninstall -g @mindfoldhq/trellis
+```
+
+An upstream CLI's `trellis upgrade` still installs `@mindfoldhq/trellis`; switch packages by hand once, as above.
+
+Every release also attaches the same tarball and its sha256 to the GitHub Release, for consumers that pin by checksum.
 
 ## What the fork changes
 
@@ -46,10 +54,12 @@ Project-specific configuration (for example a repository's `.trellis/config.yaml
 1. In the release PR, bump `packages/cli/package.json` `version` (patch for template fixes) and add `packages/cli/src/migrations/manifests/<version>.json` with a `changelog`. Do not use a `-suffix` on top of an upstream version: Trellis treats `0.6.17-x` as older than `0.6.17` and refuses to "downgrade".
 2. After merge, tag the merge commit `v<version>` and push the tag.
 3. `publish.yml` tests, packs once, publishes `c12-trellis@<version>` to npm (secret `NPM_TOKEN`, with provenance) and attaches the tarball + `.sha256` to the GitHub Release.
-4. Consumers: `npm install -g c12-trellis@<version>` (or bump `.tools/trellis.lock` in BIC-meta to the new release and sha256), then `trellis update` in each repository.
+4. Consumers: `npm install -g c12-trellis@<version>` (or `npx -y c12-trellis@<version> update`), then `trellis update` in each repository.
 5. A bad npm version cannot be overwritten: `npm deprecate c12-trellis@<version> "<reason>"` and release the next patch.
 
-The upstream `pnpm release*` scripts and `release-preflight.js` assume CLI and core share a version; the fork does not use them.
+The upstream `pnpm release*` scripts assume CLI and core share a version: `scripts/release.js` exits with an error in the fork. `create-manifest.js` and `check-manifest-continuity.js` read the package name from `package.json`, so they query `c12-trellis`.
+
+`publish.yml` refuses to release when `packages/core` differs from the upstream tag of the core version the CLI pins: npm users get that published core, not the workspace copy. After an upstream merge that changes core, either keep core at an upstream release or start publishing core from the fork.
 
 ## Pull an upstream fix
 

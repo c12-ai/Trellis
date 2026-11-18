@@ -5,8 +5,8 @@ name: Release
 # as `c12-trellis`, and attaches the same tarball plus its sha256 to the
 # GitHub Release (pinned by BIC's .tools/trellis.lock). The CLI depends on the
 # upstream `@mindfoldhq/trellis-core` release; the fork does not publish core.
-# Reruns are idempotent: an npm version that already exists is skipped and
-# Release assets are replaced in place. See docs/c12-fork.md.
+# Reruns are idempotent: an npm version that already exists is skipped,
+# and the Release then carries the tarball npm serves, replaced in place. See docs/c12-fork.md.
 on:
   push:
     tags:
@@ -86,15 +86,21 @@ jobs:
           cp README.md LICENSE packages/cli/
           (cd packages/cli && pnpm pack --pack-destination "$out")
           tgz=$(ls "$out"/c12-trellis-*.tgz)
-          tar -tzf "$tgz" | grep -qx package/LICENSE
-          # The packed manifest must pin an exact core version that exists on npm.
+          tar -xOzf "$tgz" package/LICENSE > /dev/null
+          # The packed manifest must pin an exact core version that exists on
+          # npm, and the workspace core we tested must be that release's source:
+          # npm users get the published core, not packages/core.
           core=$(tar -xOzf "$tgz" package/package.json | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).dependencies['@mindfoldhq/trellis-core'])")
           echo "Packed CLI depends on @mindfoldhq/trellis-core@$core"
           npm view "@mindfoldhq/trellis-core@$core" version > /dev/null
-          (cd "$out" && sha256sum "$(basename "$tgz")" > "$(basename "$tgz").sha256")
+          if ! git diff --quiet "v$core" HEAD -- packages/core; then
+            echo "::error::packages/core differs from upstream v$core; the published core would not match what was tested"
+            exit 1
+          fi
           echo "tgz=$tgz" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
+        id: npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -103,17 +109,25 @@ jobs:
         run: |
           set -euo pipefail
           if npm view "c12-trellis@$VERSION" version > /dev/null 2>&1; then
+            # A rerun after a partial failure: attach exactly what npm serves,
+            # not a fresh pack whose sha256 would differ.
             echo "c12-trellis@$VERSION is already on npm; skipping publish."
+            published="$RUNNER_TEMP/npm"
+            mkdir -p "$published"
+            (cd "$published" && npm pack "c12-trellis@$VERSION" > /dev/null)
+            TGZ=$(ls "$published"/c12-trellis-*.tgz)
           else
             npm publish "$TGZ" --access public --provenance --tag "$NPM_TAG"
           fi
           test "$(npm view "c12-trellis@$VERSION" version)" = "$VERSION"
+          (cd "$(dirname "$TGZ")" && sha256sum "$(basename "$TGZ")" > "$(basename "$TGZ").sha256")
+          echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
 
       - name: Publish the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
-          TGZ: ${{ steps.pack.outputs.tgz }}
+          TGZ: ${{ steps.npm.outputs.tgz }}
         run: |
           set -euo pipefail
           notes=$(node -e "process.stdout.write(require('./packages/cli/src/migrations/manifests/' + process.env.VERSION + '.json').changelog)")
