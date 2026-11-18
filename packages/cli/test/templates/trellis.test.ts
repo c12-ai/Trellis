@@ -131,7 +131,11 @@ describe("trellis template constants", () => {
     expect(workflowMdTemplate).toContain("#");
   });
 
-  it("marketplace native workflow mirror matches the bundled workflow", () => {
+  // C12 fork: the bundled workflow carries our exit checks and Rule 6, while
+  // the marketplace submodule is upstream-owned (mindfold-ai/marketplace).
+  // `native` resolves from the bundle, never from this mirror
+  // (workflow-resolver.ts), so the mirror is allowed to differ here.
+  it.skip("marketplace native workflow mirror matches the bundled workflow", () => {
     const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
       ? process.cwd()
       : path.resolve(process.cwd(), "../..");
