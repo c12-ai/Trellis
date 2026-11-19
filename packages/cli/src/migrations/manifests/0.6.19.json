@@ -1,9 +1,9 @@
 {
   "version": "0.6.19",
-  "description": "Inject a task's published handoff into Claude and Codex SessionStart; release waits for npm visibility",
+  "description": "Agents record task progress in the task's handoff.md (format in workflow.md, nudged every turn, shown at SessionStart for Claude and Codex); release waits for npm visibility",
   "breaking": false,
   "recommendMigrate": false,
-  "changelog": "**Enhancements:**\n- SessionStart hooks (Claude template `shared-hooks/session-start.py` and Codex `codex/hooks/session-start.py`) inject a `<task-handoff>` block: the newest 40 lines of the active task's `handoff.md` from the `trellis-tasks` branch. Each hook resolves the task with its own platform's session binding. Nothing is injected when the branch or file is absent, so projects that never publish handoffs see no change. Shared reader: `.trellis/scripts/common/task_handoff.py`.\n\n**Release workflow:**\n- `publish.yml` waits up to 20 minutes for a new version to become visible on npm and retries downloading the published tarball on a rerun.",
+  "changelog": "**Enhancements:**\n- `workflow.md`: new \"Recording task progress\" section — after each milestone, append an entry (State / Env / Next / Blockers / Evidence) to the active task's `handoff.md`. Planning and in_progress breadcrumbs point to it. The file is local and travels with the task branch; nothing is pushed.\n- Per-turn breadcrumb (`inject-workflow-state.py`): for planning and in_progress tasks, a progress line shows \"no entry yet\" or the last entry time and commits since, so an unrecorded milestone is visible every turn.\n- SessionStart (Claude template `shared-hooks/session-start.py` and Codex `codex/hooks/session-start.py`): each injects the newest 40 lines of its own active task's `handoff.md`, resolving the task with its own platform's session binding. Shared reader: `.trellis/scripts/common/task_handoff.py`.\n\n**Release workflow:**\n- `publish.yml` waits up to 20 minutes for a new version to become visible on npm and retries downloading the published tarball on a rerun.",
   "migrations": [],
   "notes": "Run `npx -y c12-trellis@0.6.19 update`. No file migrations required."
 }

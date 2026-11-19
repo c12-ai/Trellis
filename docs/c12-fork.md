@@ -36,7 +36,7 @@ Kept as small as possible so upstream fixes merge cleanly.
 | `templates/trellis/workflow.md` | Planning-turn and Execution-turn exit checks; Rule 6 (new input steers the active task) |
 | `templates/shared-hooks/inject-workflow-state.py` | Remaining-checklist note for in_progress tasks |
 | `templates/codex/hooks/session-start.py` | Project-root discovery from a nested cwd; no repeated first-reply notice on resume/clear/compact. Still unregistered by default (upstream #240/#242) |
-| `templates/shared-hooks/session-start.py`, `templates/codex/hooks/session-start.py`, `templates/trellis/scripts/common/task_handoff.py` | Inject the active task's published handoff (`handoff.md` on branch `trellis-tasks`) at SessionStart; each hook resolves the task for its own platform; inert without the branch |
+| `templates/trellis/workflow.md`, `templates/shared-hooks/inject-workflow-state.py`, both session-start templates, `templates/trellis/scripts/common/task_handoff.py` | Task progress record: agents append milestone entries to `<task>/handoff.md` (local, travels with the branch); the per-turn breadcrumb shows when the last entry was written; Claude and Codex SessionStart each show their own task's newest entries |
 | Templates | Whitespace-clean, so consumer pre-commit hooks do not rewrite them |
 | Package | Name, version line, release workflow (`.github/workflows/publish.yml`) |
 | Tests | `packages/cli/test/scripts/c12-customizations.integration.test.ts`; the marketplace mirror equality test is skipped because the `marketplace` submodule stays upstream-owned |

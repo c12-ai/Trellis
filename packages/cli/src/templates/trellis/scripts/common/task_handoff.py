@@ -1,70 +1,73 @@
-"""Read a task's published handoff for SessionStart injection.
+"""Read a task's recorded progress (``handoff.md``) for agent context.
 
-A project may publish task directories to a ``trellis-tasks`` branch (for
-example with a ``bin/handoff`` helper) so that a session started on another
-machine sees the latest recorded state. SessionStart hooks resolve the active
-task with their own platform rules and pass its directory here.
+Agents append progress entries to ``<task>/handoff.md`` as they work (format in
+workflow.md, "Recording task progress"). The file is local and travels with the
+task branch, so whoever picks the task up next — on this machine or another —
+starts from the latest entries.
 
-Nothing is injected when the branch or the task's ``handoff.md`` on it does not
-exist, so projects that never publish handoffs see no change.
+``build_handoff_block`` feeds SessionStart; ``progress_note`` feeds the per-turn
+breadcrumb so a missing or stale record is visible every turn.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
-HANDOFF_BRANCH = "trellis-tasks"
 HANDOFF_FILE = "handoff.md"
 MAX_LINES = 40
+_ENTRY_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\b", re.MULTILINE)
 
 
-def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", *args], cwd=repo_root, capture_output=True, text=True
-    )
+def _read(task_dir: Path) -> str:
+    try:
+        return (task_dir / HANDOFF_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def build_handoff_block(repo_root: Path, task_dir: Path) -> str:
-    """Return a ``<task-handoff>`` block for ``task_dir``, or ``""``.
-
-    Reads the branch tip through git without touching the worktree. Entries
-    are appended over time, so the newest lines are the ones shown.
-    """
-    tip_sha = ""
-    for ref in (f"refs/remotes/origin/{HANDOFF_BRANCH}", f"refs/heads/{HANDOFF_BRANCH}"):
-        probe = _git(repo_root, "rev-parse", "--verify", "-q", ref)
-        if probe.returncode == 0:
-            tip_sha = probe.stdout.strip()
-            break
-    if not tip_sha:
-        return ""
-
-    try:
-        rel_task = task_dir.resolve().relative_to(repo_root.resolve())
-    except ValueError:
-        return ""
-    rel_handoff = rel_task.joinpath(HANDOFF_FILE).as_posix()
-
-    show = _git(repo_root, "show", f"{tip_sha}:{rel_handoff}")
-    if show.returncode != 0:
-        return ""
-    lines = show.stdout.strip().splitlines()
+    """Return a ``<task-handoff>`` block with the newest lines, or ``""``."""
+    lines = _read(task_dir).splitlines()
     if not lines:
         return ""
+    try:
+        rel = (task_dir / HANDOFF_FILE).resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        rel = str(task_dir / HANDOFF_FILE)
     body = "\n".join(lines[-MAX_LINES:])
     if len(lines) > MAX_LINES:
-        body = (
-            f"… ({len(lines) - MAX_LINES} earlier lines; read {rel_handoff} on the branch)\n"
-            + body
-        )
+        body = f"… ({len(lines) - MAX_LINES} earlier lines in {rel})\n" + body
+    return f"<task-handoff>\nRecorded progress ({rel}):\n---\n{body}\n</task-handoff>"
 
-    stamp = _git(repo_root, "show", "-s", "--format=%cs %h", tip_sha).stdout.strip()
+
+def _commits_since(repo_root: Path, stamp: str) -> int | None:
+    result = subprocess.run(
+        ["git", "rev-list", "--count", f"--since={stamp}", "HEAD"],
+        cwd=repo_root, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return None
+
+
+def progress_note(repo_root: Path, task_dir: Path) -> str:
+    """One breadcrumb line about the task's progress record."""
+    stamps = _ENTRY_RE.findall(_read(task_dir))
+    pointer = 'see "Recording task progress" in .trellis/workflow.md'
+    if not stamps:
+        return (
+            f"Progress record: no entry in {HANDOFF_FILE} yet — append one after "
+            f"the next milestone ({pointer})."
+        )
+    last = stamps[-1]
+    since = _commits_since(repo_root, last)
+    tail = f"; {since} commit(s) on this branch since" if since else ""
     return (
-        "<task-handoff>\n"
-        f"Published state: branch `{HANDOFF_BRANCH}` @ {stamp}. "
-        f"Read the full file from that branch: {rel_handoff}.\n"
-        "---\n"
-        f"{body}\n"
-        "</task-handoff>"
+        f"Progress record: last {HANDOFF_FILE} entry {last}{tail} — append an "
+        f"entry after each milestone ({pointer})."
     )

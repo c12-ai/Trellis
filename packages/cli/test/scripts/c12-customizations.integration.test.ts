@@ -228,6 +228,10 @@ describe("workflow.md exit checks", () => {
   });
 
   it("points every planning and execution breadcrumb at its exit check", () => {
+    for (const name of ["planning", "planning-inline", "in_progress", "in_progress-inline"]) {
+      expect(block(name)).toContain("append an entry to the task's `handoff.md`");
+    }
+    expect(workflow).toContain("### Recording task progress");
     for (const name of ["planning", "planning-inline"]) {
       expect(block(name)).toContain("apply the Planning-turn exit check");
     }
@@ -261,7 +265,7 @@ describe("templates survive pre-commit whitespace hooks", () => {
   });
 });
 
-describeFn("SessionStart handoff injection", () => {
+describeFn("Task progress record (handoff.md)", () => {
   let tmp: string;
 
   function git(...args: string[]): void {
@@ -271,19 +275,15 @@ describeFn("SessionStart handoff injection", () => {
     });
   }
 
-  // Publish `lines` as the fixture task's handoff.md on `trellis-tasks`,
-  // leaving the working tree on `main` without the file.
-  function publishHandoff(lines: string[]): void {
-    git("checkout", "-q", "-b", "trellis-tasks");
-    const handoff = path.join(tmp, ".trellis", "tasks", "fixture", "handoff.md");
-    fs.writeFileSync(handoff, lines.join("\n") + "\n");
-    git("add", handoff);
-    git("commit", "-q", "-m", "handoff");
-    git("checkout", "-q", "main");
+  function writeHandoff(lines: string[]): void {
+    fs.writeFileSync(
+      path.join(tmp, ".trellis", "tasks", "fixture", "handoff.md"),
+      lines.join("\n") + "\n",
+    );
   }
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-c12-handoff-"));
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-c12-progress-"));
     setupRepo(tmp);
     fs.rmSync(path.join(tmp, ".git"), { recursive: true });
     git("init", "-q", "-b", "main");
@@ -294,7 +294,8 @@ describeFn("SessionStart handoff injection", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  // Each agent's own template, resolving the task with its own platform.
+  // Each agent's own SessionStart template, resolving the task with its own
+  // platform's session binding.
   const agents = [
     {
       name: "Claude template",
@@ -324,10 +325,9 @@ describeFn("SessionStart handoff injection", () => {
       return additionalContext(r.stdout);
     }
 
-    it(`${agent.name}: injects the newest handoff lines for its own task`, () => {
+    it(`${agent.name}: shows the newest recorded progress of its own task`, () => {
       setActiveTask(tmp, agent.sessionKey, "in_progress", null);
-      const lines = Array.from({ length: 45 }, (_, i) => `entry ${i + 1}`);
-      publishHandoff(lines);
+      writeHandoff(Array.from({ length: 45 }, (_, i) => `entry ${i + 1}`));
       for (const source of ["startup", "compact"]) {
         const ctx = start(source);
         expect(ctx).toContain("Current task: .trellis/tasks/fixture");
@@ -340,17 +340,47 @@ describeFn("SessionStart handoff injection", () => {
 
     it(`${agent.name}: ignores a task bound to the other agent's session`, () => {
       setActiveTask(tmp, agent.otherKey, "in_progress", null);
-      publishHandoff(["entry"]);
+      writeHandoff(["entry"]);
       const ctx = start();
       expect(ctx).toContain("Current task: none.");
       expect(ctx).not.toContain("<task-handoff>");
     });
 
-    it(`${agent.name}: injects nothing without a trellis-tasks branch`, () => {
+    it(`${agent.name}: shows nothing when the task has no handoff.md`, () => {
       setActiveTask(tmp, agent.sessionKey, "in_progress", null);
       const ctx = start();
       expect(ctx).toContain("Current task: .trellis/tasks/fixture");
       expect(ctx).not.toContain("<task-handoff>");
     });
   }
+
+  function turn(): string {
+    const r = runPython(
+      path.join(SHARED_HOOKS, "inject-workflow-state.py"),
+      tmp,
+      { hook_event_name: "UserPromptSubmit", cwd: tmp, session_id: "owner", prompt: "go" },
+      { ...cleanEnv(), CLAUDE_PROJECT_DIR: tmp },
+    );
+    expect(r.status, r.stderr).toBe(0);
+    return additionalContext(r.stdout);
+  }
+
+  it("per-turn breadcrumb flags a task with no progress entry yet", () => {
+    for (const status of ["planning", "in_progress"]) {
+      setActiveTask(tmp, "claude_owner", status, null);
+      expect(turn()).toContain("Progress record: no entry in handoff.md yet");
+    }
+  });
+
+  it("per-turn breadcrumb names the last entry and the commits since", () => {
+    setActiveTask(tmp, "claude_owner", "in_progress", null);
+    writeHandoff(["## 2020-01-01 09:00 laptop", "first slice done"]);
+    const ctx = turn();
+    expect(ctx).toContain("Progress record: last handoff.md entry 2020-01-01 09:00");
+    expect(ctx).toContain("1 commit(s) on this branch since");
+  });
+
+  it("per-turn breadcrumb has no progress line without an active task", () => {
+    expect(turn()).not.toContain("Progress record:");
+  });
 });
