@@ -178,6 +178,24 @@ Before a final reply in Phase 2 (status `in_progress`), check the task's `implem
 
 End the turn only when a material user decision is required after independent work is done; when an external blocker remains after other independent work is done; when the next slice reaches a review or approval gate (for example commit or merge authorization); when the user asked to wait, pause, or cancel; or when the checklist is complete and 2.2, 3.3, and 3.4 are done. State the specific reason when work stops early.
 
+### Recording task progress
+
+Keep the active task's progress in `<task>/handoff.md` so that anyone picking the task up later — another session, another machine, or a person — starts from where you are. The file is local and travels with the task branch.
+
+Append an entry after each milestone: a decision is made, a slice or wave is done, a PR is raised or merged, a deploy or test run finishes, or a blocker appears. Newest entry last:
+
+```markdown
+## YYYY-MM-DD HH:MM <machine>
+<one line: what happened>
+State: <phase, checklist position, branches/PRs and their status>
+Env: <where it runs: machine, container, services, stage>
+Next: <the next concrete step>
+Blockers: <none, or what blocks and who decides>
+Evidence: <paths, PR/run links, commands>
+```
+
+The per-turn breadcrumb shows when the last entry was written; an old or missing entry means progress is not recorded yet.
+
 ### Parent / Child Task Trees
 
 Use a parent task when one user request contains several independently verifiable deliverables. The parent task owns the source requirement set, the task map, cross-child acceptance criteria, and final integration review; it normally should not be the implementation target unless it also has direct work.
@@ -214,6 +232,7 @@ Preserve existing task fields and artifacts. If the correct status cannot be det
 
 [workflow-state:planning]
 Load `trellis-brainstorm`; stay in planning.
+After a milestone, append an entry to the task's `handoff.md` (Recording task progress in the Phase Index of `.trellis/workflow.md`).
 Before ending this turn, apply the Planning-turn exit check in the Phase Index of `.trellis/workflow.md`.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
@@ -228,6 +247,7 @@ Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research mani
 
 [workflow-state:planning-inline]
 Load `trellis-brainstorm`; stay in planning.
+After a milestone, append an entry to the task's `handoff.md` (Recording task progress in the Phase Index of `.trellis/workflow.md`).
 Before ending this turn, apply the Planning-turn exit check in the Phase Index of `.trellis/workflow.md`.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
@@ -254,6 +274,7 @@ For new user input during this task, apply Rule 6 in the Phase Index of `.trelli
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
 Dispatch prompt starts with `Active task: <task path from task.py current>`. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
 Execute in waves: size each dispatch to cover multiple checklist items when their verification budget allows, instead of one item per dispatch.
+After a milestone, append an entry to the task's `handoff.md` (Recording task progress in the Phase Index of `.trellis/workflow.md`).
 Before ending this turn, apply the Execution-turn exit check in the Phase Index of `.trellis/workflow.md`.
 [/workflow-state:in_progress]
 
@@ -268,6 +289,7 @@ For new user input during this task, apply Rule 6 in the Phase Index of `.trelli
 Do not dispatch implement/check sub-agents in inline mode.
 Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, plus relevant spec/research loaded by skills.
 Continue through checklist items in this turn where the verification budget allows; do not stop after one item.
+After a milestone, append an entry to the task's `handoff.md` (Recording task progress in the Phase Index of `.trellis/workflow.md`).
 Before ending this turn, apply the Execution-turn exit check in the Phase Index of `.trellis/workflow.md`.
 [/workflow-state:in_progress-inline]
 

@@ -393,6 +393,29 @@ _CHECKLIST_ITEM_RE = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s*(.*)$")
 _CHECKLIST_NEXT_MAX_CHARS = 100
 
 
+def build_progress_note(root: Path, data: dict, status: str) -> Optional[str]:
+    """Return the task's progress-record line for planning/in_progress, else None.
+
+    Recording progress is mechanical, not a text rule the model must remember:
+    every turn shows whether the task's handoff.md has an entry and how old
+    it is (2026-11-19, see "Recording task progress" in workflow.md).
+    """
+    if status not in ("planning", "in_progress"):
+        return None
+    active = _resolve_active_task(root, data)
+    if not active.task_path or active.stale:
+        return None
+    task_dir = Path(active.task_path)
+    if not task_dir.is_absolute():
+        task_dir = root / task_dir
+    try:
+        from common.task_handoff import progress_note  # type: ignore[import-not-found]
+
+        return progress_note(root, task_dir)
+    except Exception:
+        return None  # Optional note; never block the breadcrumb.
+
+
 def build_checklist_note(root: Path, data: dict, status: str) -> Optional[str]:
     """Return a checklist-remaining note for an in_progress task, else None.
 
@@ -516,7 +539,15 @@ def main() -> int:
         task_id, status, source = task
         status_key = resolve_breadcrumb_key(status, platform, config)
         source_for_breadcrumb = None if platform == "codex" else source
-        extra_body = build_checklist_note(root, data, status)
+        notes = [
+            note
+            for note in (
+                build_checklist_note(root, data, status),
+                build_progress_note(root, data, status),
+            )
+            if note
+        ]
+        extra_body = "\n\n".join(notes) or None
         breadcrumb = build_breadcrumb(
             task_id, status, templates, source_for_breadcrumb,
             breadcrumb_key=status_key, extra_body=extra_body,
