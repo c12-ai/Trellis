@@ -694,6 +694,20 @@ def _collect_spec_index_paths(trellis_dir: Path, allowed_pkgs: set | None) -> li
     return paths
 
 
+def _build_handoff(trellis_dir: Path, input_data: dict) -> str:
+    """Published handoff for this session's own active task, if any."""
+    try:
+        active = _resolve_active_task(trellis_dir, input_data)
+        if not active.task_path or active.stale:
+            return ""
+        from common.task_handoff import build_handoff_block  # type: ignore[import-not-found]
+
+        task_dir = _resolve_task_dir(trellis_dir, active.task_path)
+        return build_handoff_block(trellis_dir.parent, task_dir)
+    except Exception:
+        return ""  # Optional context; never block session start.
+
+
 def _build_compact_current_state(
     trellis_dir: Path,
     input_data: dict,
@@ -874,6 +888,11 @@ Trellis compact SessionStart context. Use it to orient the session; load details
 """)
     output.write(_build_first_reply_notice(_resolve_update_hint(trellis_dir, context_key)))
     output.write("\n\n")
+
+    handoff_block = _build_handoff(trellis_dir, hook_input)
+    if handoff_block:
+        output.write(handoff_block)
+        output.write("\n\n")
 
     # Legacy migration warning
     legacy_warning = _check_legacy_spec(trellis_dir, is_mono, packages)

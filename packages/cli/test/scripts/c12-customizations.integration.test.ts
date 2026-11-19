@@ -260,3 +260,97 @@ describe("templates survive pre-commit whitespace hooks", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describeFn("SessionStart handoff injection", () => {
+  let tmp: string;
+
+  function git(...args: string[]): void {
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
+  }
+
+  // Publish `lines` as the fixture task's handoff.md on `trellis-tasks`,
+  // leaving the working tree on `main` without the file.
+  function publishHandoff(lines: string[]): void {
+    git("checkout", "-q", "-b", "trellis-tasks");
+    const handoff = path.join(tmp, ".trellis", "tasks", "fixture", "handoff.md");
+    fs.writeFileSync(handoff, lines.join("\n") + "\n");
+    git("add", handoff);
+    git("commit", "-q", "-m", "handoff");
+    git("checkout", "-q", "main");
+  }
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-c12-handoff-"));
+    setupRepo(tmp);
+    fs.rmSync(path.join(tmp, ".git"), { recursive: true });
+    git("init", "-q", "-b", "main");
+    git("commit", "-q", "--allow-empty", "-m", "init");
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  // Each agent's own template, resolving the task with its own platform.
+  const agents = [
+    {
+      name: "Claude template",
+      script: path.join(SHARED_HOOKS, "session-start.py"),
+      sessionKey: "claude_owner",
+      otherKey: "codex_owner",
+      env: (dir: string) => ({ ...cleanEnv(), CLAUDE_PROJECT_DIR: dir }),
+    },
+    {
+      name: "Codex template",
+      script: path.join(CODEX_HOOKS, "session-start.py"),
+      sessionKey: "codex_owner",
+      otherKey: "claude_owner",
+      env: () => cleanEnv(),
+    },
+  ];
+
+  for (const agent of agents) {
+    function start(source = "startup"): string {
+      const r = runPython(
+        agent.script,
+        tmp,
+        { cwd: tmp, source, session_id: "owner", hook_event_name: "SessionStart" },
+        agent.env(tmp),
+      );
+      expect(r.status, r.stderr).toBe(0);
+      return additionalContext(r.stdout);
+    }
+
+    it(`${agent.name}: injects the newest handoff lines for its own task`, () => {
+      setActiveTask(tmp, agent.sessionKey, "in_progress", null);
+      const lines = Array.from({ length: 45 }, (_, i) => `entry ${i + 1}`);
+      publishHandoff(lines);
+      for (const source of ["startup", "compact"]) {
+        const ctx = start(source);
+        expect(ctx).toContain("Current task: .trellis/tasks/fixture");
+        expect(ctx).toContain("<task-handoff>");
+        expect(ctx).toContain("entry 45");
+        expect(ctx).not.toContain("entry 5\n");
+        expect(ctx).toContain("5 earlier lines");
+      }
+    });
+
+    it(`${agent.name}: ignores a task bound to the other agent's session`, () => {
+      setActiveTask(tmp, agent.otherKey, "in_progress", null);
+      publishHandoff(["entry"]);
+      const ctx = start();
+      expect(ctx).toContain("Current task: none.");
+      expect(ctx).not.toContain("<task-handoff>");
+    });
+
+    it(`${agent.name}: injects nothing without a trellis-tasks branch`, () => {
+      setActiveTask(tmp, agent.sessionKey, "in_progress", null);
+      const ctx = start();
+      expect(ctx).toContain("Current task: .trellis/tasks/fixture");
+      expect(ctx).not.toContain("<task-handoff>");
+    });
+  }
+});
