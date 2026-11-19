@@ -481,10 +481,21 @@ def main() -> None:
         hook_input = json.loads(sys.stdin.read())
         if not isinstance(hook_input, dict):
             hook_input = {}
-        project_dir = Path(_normalize_windows_shell_path(hook_input.get("cwd", "."))).resolve()
+        session_dir = Path(_normalize_windows_shell_path(hook_input.get("cwd", "."))).resolve()
     except (json.JSONDecodeError, KeyError):
         hook_input = {}
-        project_dir = Path(".").resolve()
+        session_dir = Path(".").resolve()
+
+    # Codex runs hooks in the session cwd, which may be below the project root.
+    project_dir = None
+    for path in (session_dir, *session_dir.parents):
+        if (path / ".trellis" / "scripts").is_dir():
+            project_dir = path
+            break
+        if (path / ".git").exists():
+            break
+    if project_dir is None:
+        return
 
     configure_project_encoding(project_dir)
 
@@ -498,8 +509,10 @@ Trellis compact SessionStart context. Use it to orient the session; load details
 </session-context>
 
 """)
-    output.write(FIRST_REPLY_NOTICE)
-    output.write("\n\n")
+    # Repeat events of the same conversation must not ask for the notice again.
+    if hook_input.get("source") not in ("resume", "clear", "compact"):
+        output.write(FIRST_REPLY_NOTICE)
+        output.write("\n\n")
 
     output.write("<current-state>\n")
     output.write(_build_compact_current_state(trellis_dir, hook_input, spec_index_paths))

@@ -166,6 +166,18 @@ Phase 3: Finish  → verify, update spec, commit, and wrap up
 - `implement.jsonl` / `check.jsonl` — spec and research manifests for sub-agent context. They do not replace `implement.md`.
 - Lightweight tasks may be PRD-only. Complex tasks must have `prd.md`, `design.md`, and `implement.md` before `task.py start`.
 
+### Planning-turn exit check
+
+Before a final reply in Phase 1, check the user's current authorization and the next required planning action. If authorized research, artifact work, or scope resolution can proceed independently, do it in this turn. Answer a status or “what's next?” question briefly, then resume that work unless the user asked for an answer only this turn. Check artifact content and unresolved decisions, not only file existence.
+
+End the turn when the user requested only task creation or task selection, asked to wait, paused or canceled; when a material user decision is required after independent work is done; when an external blocker remains after other independent work is done; or when the complete, current plan has been submitted for final review. State the specific reason when work stops before final review. Keep the task in `planning` until the user explicitly approves implementation of that reviewed plan. A generated continuation or an agent's own statement is not user approval.
+
+### Execution-turn exit check
+
+Before a final reply in Phase 2 (status `in_progress`), check the task's `implement.md` checklist and the next required execution action. If authorized, unblocked checklist work remains, continue it in this turn. Completing one checklist item is not a legal stop point. Answer a status or progress question briefly, then resume execution unless the user asked for an answer only this turn. The per-turn breadcrumb shows the remaining unchecked item count; reconcile it with the real checklist before reporting.
+
+End the turn only when a material user decision is required after independent work is done; when an external blocker remains after other independent work is done; when the next slice reaches a review or approval gate (for example commit or merge authorization); when the user asked to wait, pause, or cancel; or when the checklist is complete and 2.2, 3.3, and 3.4 are done. State the specific reason when work stops early.
+
 ### Parent / Child Task Trees
 
 Use a parent task when one user request contains several independently verifiable deliverables. The parent task owns the source requirement set, the task map, cross-child acceptance criteria, and final integration review; it normally should not be the implementation target unless it also has direct work.
@@ -202,6 +214,7 @@ Preserve existing task fields and artifacts. If the correct status cannot be det
 
 [workflow-state:planning]
 Load `trellis-brainstorm`; stay in planning.
+Before ending this turn, apply the Planning-turn exit check in the Phase Index of `.trellis/workflow.md`.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
 Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research manifests before start.
@@ -215,6 +228,7 @@ Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research mani
 
 [workflow-state:planning-inline]
 Load `trellis-brainstorm`; stay in planning.
+Before ending this turn, apply the Planning-turn exit check in the Phase Index of `.trellis/workflow.md`.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
 Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-before-dev`.
@@ -236,8 +250,11 @@ Sub-agent dispatch protocol applies to all platforms and all sub-agents, includi
 [workflow-state:in_progress]
 Tools: `trellis-implement` / `trellis-research` are sub-agent types only (Task/Agent tool, NOT Skill; there is no skill by these names). `trellis-update-spec` is a skill. `trellis-check` exists as both; prefer the Agent form when verifying after code changes.
 Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
+For new user input during this task, apply Rule 6 in the Phase Index of `.trellis/workflow.md`.
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
 Dispatch prompt starts with `Active task: <task path from task.py current>`. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
+Execute in waves: size each dispatch to cover multiple checklist items when their verification budget allows, instead of one item per dispatch.
+Before ending this turn, apply the Execution-turn exit check in the Phase Index of `.trellis/workflow.md`.
 [/workflow-state:in_progress]
 
 <!-- Per-turn breadcrumb: shown while status='in_progress' when
@@ -247,8 +264,11 @@ Dispatch prompt starts with `Active task: <task path from task.py current>`. Rea
 
 [workflow-state:in_progress-inline]
 Flow: `trellis-before-dev` -> edit -> `trellis-check` -> validation -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
+For new user input during this task, apply Rule 6 in the Phase Index of `.trellis/workflow.md`.
 Do not dispatch implement/check sub-agents in inline mode.
 Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, plus relevant spec/research loaded by skills.
+Continue through checklist items in this turn where the verification budget allows; do not stop after one item.
+Before ending this turn, apply the Execution-turn exit check in the Phase Index of `.trellis/workflow.md`.
 [/workflow-state:in_progress-inline]
 
 ### Phase 3: Finish
@@ -278,6 +298,7 @@ Code committed. Run `/trellis:finish-work`; if dirty, return to Phase 3.4 first.
 3. Phases can roll back (e.g., Execute reveals a prd defect → return to Plan to fix, then re-enter Execute)
 4. Steps tagged `[once]` are skipped if the output already exists; don't re-run
 5. Artifact presence informs the next step; missing `design.md` / `implement.md` is valid for lightweight tasks and incomplete planning for complex tasks.
+6. Treat new user input during an active task as steering that task unless the user explicitly replaces or cancels it. Answer a status or discussion request briefly, then continue the original authorized work unless the user asked for an answer only, asked to wait or pause, or a real decision or approval blocks the next step. Reconcile outstanding required sub-agent results. Before a final report, account for the original objectives and the latest input, including failed, blocked, and pending work.
 
 ### Active Task Routing
 
@@ -334,7 +355,7 @@ For task trees, create the parent task first and then create each child with `--
 
 After this command succeeds, the per-turn breadcrumb auto-switches to `[workflow-state:planning]`, telling the AI to stay in planning.
 
-Run only `create` here — do not also run `start`. `start` flips status to `in_progress`, which switches the breadcrumb to the implementation phase before planning artifacts are reviewed. Save `start` for step 1.4.
+At this step, run `create` without `start`. This prevents early activation; it does not end the planning turn. Continue the authorized Phase 1 work. Save `start` for step 1.4, after review and explicit implementation approval.
 
 Skip when `python3 ./.trellis/scripts/task.py current --source` already points to a task.
 

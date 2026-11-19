@@ -1,0 +1,9 @@
+{
+  "version": "0.6.18",
+  "description": "First C12 fork release (c12-trellis): workflow follow-through checks, checklist note, Codex session-start fixes, clean template whitespace",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**C12 fork:** published as `c12-trellis` from https://github.com/c12-ai/Trellis. Includes upstream `mindfold-ai/trellis` main at f089cb3 (0.6.17 plus the archive-commit fix #629); depends on `@mindfoldhq/trellis-core@0.6.17`.\n\n**Enhancements:**\n- workflow.md: Planning-turn and Execution-turn exit checks, and Rule 6 (new user input steers the active task instead of replacing it). The planning and in_progress breadcrumbs point to them.\n- inject-workflow-state.py: for an in_progress task, the per-turn breadcrumb names how many `implement.md` checklist items remain and the next one.\n\n**Bug Fixes:**\n- Codex session-start.py: resolves the project root when the session starts in a subdirectory (previously `ModuleNotFoundError: common`), and does not repeat the first-reply notice on resume/clear/compact. Codex SessionStart stays unregistered by default (upstream #240/#242).\n- Templates no longer carry trailing whitespace or a missing/extra final newline, so pre-commit whitespace hooks do not rewrite delivered files.",
+  "migrations": [],
+  "notes": "Install: `npm uninstall -g @mindfoldhq/trellis` (both packages provide the `trellis` command), then `npm install -g c12-trellis` and run `trellis update`. Projects on 0.6.17 upgrade in place. No file migrations required."
+}

@@ -26,7 +26,9 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, which has no Python 3.9 build for the
+    # minimum-version syntax check below.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,7 +62,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Typecheck Python
-        run: pnpm --filter @mindfoldhq/trellis lint:py
+        run: pnpm --filter c12-trellis lint:py
 
       - name: Lint (core + cli)
         run: pnpm lint

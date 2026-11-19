@@ -1,26 +1,28 @@
-name: Publish to npm
+name: Release
 
-# Both event sources stay wired so a published GitHub Release and a raw
-# `v*` tag push both fire a publish. The shared release-preflight script
-# makes reruns idempotent: if a package version is already on npm it is
-# skipped, so duplicate triggers do not produce duplicate publishes.
+# C12 fork release: a `v*` tag that matches packages/cli/package.json builds
+# and tests the workspace, packs the CLI once, publishes that tarball to npm
+# as `c12-trellis`, and attaches the same tarball plus its sha256 to the
+# GitHub Release (pinned by BIC's .tools/trellis.lock). The CLI depends on the
+# upstream `@mindfoldhq/trellis-core` release; the fork does not publish core.
+# Reruns are idempotent: an npm version that already exists is skipped,
+# and the Release then carries the tarball npm serves, replaced in place. See docs/c12-fork.md.
 on:
-  release:
-    types: [published]
   push:
     tags:
       - "v*"
 
 concurrency:
-  group: publish-${{ github.ref_name || github.ref }}
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  release:
+    # Same image as ci.yml, so the release runs the tests CI already passed.
+    runs-on: ubuntu-24.04
     permissions:
-      contents: read
-      # Required for npm provenance attestations.
+      contents: write
+      # npm provenance attestation.
       id-token: write
     steps:
       - name: Checkout
@@ -40,14 +42,30 @@ jobs:
         with:
           version: 10.32.1
 
+      - name: Check tag matches the CLI version
+        id: version
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./packages/cli/package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match packages/cli version $version"
+            exit 1
+          fi
+          case "$version" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify version alignment (core, cli, git tag)
-        run: node packages/cli/scripts/release-preflight.js check-versions --require-tag
-
       - name: Typecheck (core + cli)
         run: pnpm typecheck
+
+      - name: Lint (core + cli)
+        run: pnpm lint
 
       # Build before test: integration tests spawn the real CLI via
       # bin/trellis.js, which imports dist/ and needs build output to exist.
@@ -57,36 +75,67 @@ jobs:
       - name: Test (core + cli)
         run: pnpm test
 
-      - name: Verify packed CLI pins core to exact version
-        run: node packages/cli/scripts/release-preflight.js verify-packed-cli
+      - name: Pack the CLI
+        id: pack
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/dist"
+          mkdir -p "$out"
+          # `pnpm pack` does not run prepublishOnly, which is where upstream
+          # copies these in; the AGPL license must ship with the package.
+          cp README.md LICENSE packages/cli/
+          (cd packages/cli && pnpm pack --pack-destination "$out")
+          tgz=$(ls "$out"/c12-trellis-*.tgz)
+          tar -xOzf "$tgz" package/LICENSE > /dev/null
+          # The packed manifest must pin an exact core version that exists on
+          # npm, and the workspace core we tested must be that release's source:
+          # npm users get the published core, not packages/core.
+          core=$(tar -xOzf "$tgz" package/package.json | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).dependencies['@mindfoldhq/trellis-core'])")
+          echo "Packed CLI depends on @mindfoldhq/trellis-core@$core"
+          npm view "@mindfoldhq/trellis-core@$core" version > /dev/null
+          if ! git diff --quiet "v$core" HEAD -- packages/core; then
+            echo "::error::packages/core differs from upstream v$core; the published core would not match what was tested"
+            exit 1
+          fi
+          echo "tgz=$tgz" >> "$GITHUB_OUTPUT"
 
-      - name: Compute publish plan
-        id: plan
-        run: node packages/cli/scripts/release-preflight.js publish-plan --github
-
-      - name: Publish @mindfoldhq/trellis-core
-        if: steps.plan.outputs.core_publish == 'true'
-        run: pnpm publish --access public --no-git-checks --tag ${{ steps.plan.outputs.tag }}
-        working-directory: packages/core
+      - name: Publish to npm
+        id: npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
+          VERSION: ${{ steps.version.outputs.version }}
+          NPM_TAG: ${{ steps.version.outputs.npm_tag }}
+          TGZ: ${{ steps.pack.outputs.tgz }}
+        run: |
+          set -euo pipefail
+          if npm view "c12-trellis@$VERSION" version > /dev/null 2>&1; then
+            # A rerun after a partial failure: attach exactly what npm serves,
+            # not a fresh pack whose sha256 would differ.
+            echo "c12-trellis@$VERSION is already on npm; skipping publish."
+            published="$RUNNER_TEMP/npm"
+            mkdir -p "$published"
+            (cd "$published" && npm pack "c12-trellis@$VERSION" > /dev/null)
+            TGZ=$(ls "$published"/c12-trellis-*.tgz)
+          else
+            npm publish "$TGZ" --access public --provenance --tag "$NPM_TAG"
+          fi
+          test "$(npm view "c12-trellis@$VERSION" version)" = "$VERSION"
+          (cd "$(dirname "$TGZ")" && sha256sum "$(basename "$TGZ")" > "$(basename "$TGZ").sha256")
+          echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
 
-      - name: Skip @mindfoldhq/trellis-core (already on npm)
-        if: steps.plan.outputs.core_publish != 'true'
-        run: echo "@mindfoldhq/trellis-core@${{ steps.plan.outputs.version }} already published; skipping."
-
-      - name: Publish @mindfoldhq/trellis
-        if: steps.plan.outputs.cli_publish == 'true'
-        run: pnpm publish --access public --no-git-checks --tag ${{ steps.plan.outputs.tag }}
-        working-directory: packages/cli
+      - name: Publish the GitHub Release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
-
-      - name: Skip @mindfoldhq/trellis (already on npm)
-        if: steps.plan.outputs.cli_publish != 'true'
-        run: echo "@mindfoldhq/trellis@${{ steps.plan.outputs.version }} already published; skipping."
-
-      - name: Verify published packages on public npm
-        run: node packages/cli/scripts/release-preflight.js verify-npm --package all
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TGZ: ${{ steps.npm.outputs.tgz }}
+        run: |
+          set -euo pipefail
+          notes=$(node -e "process.stdout.write(require('./packages/cli/src/migrations/manifests/' + process.env.VERSION + '.json').changelog)")
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$TGZ" "$TGZ.sha256" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$TGZ" "$TGZ.sha256" \
+              --title "$GITHUB_REF_NAME" --notes "$notes" --verify-tag $prerelease
+          fi

@@ -14,6 +14,14 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_DIR = path.resolve(__dirname, "..");
 
+// C12 fork: this script bumps CLI and core in lockstep for the upstream npm
+// packages. The fork releases only the CLI, from a tag (docs/c12-fork.md).
+console.error(
+  "release.js is disabled in the C12 fork: bump packages/cli/package.json " +
+    "in a PR, then push a v<version> tag. See docs/c12-fork.md.",
+);
+process.exit(1);
+
 const RELEASE_TYPES = new Set([
   "patch",
   "minor",

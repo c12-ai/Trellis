@@ -362,6 +362,7 @@ def build_breadcrumb(
     templates: dict[str, str],
     source: str | None = None,
     breadcrumb_key: str | None = None,
+    extra_body: str | None = None,
 ) -> str:
     """Build the <workflow-state>...</workflow-state> block.
 
@@ -369,6 +370,8 @@ def build_breadcrumb(
     - Unknown status (no tag, or workflow.md missing) → generic
       "Refer to workflow.md for current step." line
     - `no_task` pseudo-status (task_id is None) → header omits task info
+    - `extra_body` → appended paragraph inside the same tag (e.g. the
+      computed checklist-remaining note for in_progress tasks)
     """
     lookup_key = breadcrumb_key or status
     body = templates.get(lookup_key)
@@ -376,8 +379,73 @@ def build_breadcrumb(
         body = templates.get(status)
     if body is None:
         body = "Refer to workflow.md for current step."
+    if extra_body:
+        body = f"{body}\n\n{extra_body}"
     header = f"Status: {status}" if task_id is None else f"Task: {task_id} ({status})"
     return f"<workflow-state>\n{header}\n{body}\n</workflow-state>"
+
+
+# ---------------------------------------------------------------------------
+# Checklist-remaining note (in_progress execution continuation)
+# ---------------------------------------------------------------------------
+
+_CHECKLIST_ITEM_RE = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s*(.*)$")
+_CHECKLIST_NEXT_MAX_CHARS = 100
+
+
+def build_checklist_note(root: Path, data: dict, status: str) -> Optional[str]:
+    """Return a checklist-remaining note for an in_progress task, else None.
+
+    Computed purely from implement.md GFM checkboxes of the active task.
+    Emitted only when at least one item is unchecked: the model should see
+    the remaining work every turn, so completing one slice is not mistaken
+    for a legal turn end (Codex follow-through failure mode, 2026-11-18).
+    """
+    if status != "in_progress":
+        return None
+    active = _resolve_active_task(root, data)
+    if not active.task_path or active.stale:
+        return None
+    task_dir = Path(active.task_path)
+    if not task_dir.is_absolute():
+        task_dir = root / task_dir
+    implement_md = task_dir / "implement.md"
+    if not implement_md.is_file():
+        return None
+    try:
+        text = implement_md.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    checked = 0
+    unchecked = 0
+    next_item: str | None = None
+    for line in text.splitlines():
+        m = _CHECKLIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        if m.group(1).strip().lower() == "x":
+            checked += 1
+        else:
+            unchecked += 1
+            if next_item is None:
+                next_item = " ".join(m.group(2).split())
+    if unchecked == 0:
+        return None
+    total = checked + unchecked
+    note = (
+        f"Remaining checklist: {unchecked} of {total} items unchecked in implement.md."
+    )
+    if next_item:
+        if len(next_item) > _CHECKLIST_NEXT_MAX_CHARS:
+            next_item = next_item[: _CHECKLIST_NEXT_MAX_CHARS - 1] + "…"
+        note += f' Next: "{next_item}".'
+    note += (
+        " Completing one item is not a legal turn end — continue with the "
+        "next item in this turn, or state the real stop reason "
+        "(user decision / blocker / review gate / asked to wait)."
+    )
+    return note
 
 
 # ---------------------------------------------------------------------------
@@ -448,8 +516,10 @@ def main() -> int:
         task_id, status, source = task
         status_key = resolve_breadcrumb_key(status, platform, config)
         source_for_breadcrumb = None if platform == "codex" else source
+        extra_body = build_checklist_note(root, data, status)
         breadcrumb = build_breadcrumb(
-            task_id, status, templates, source_for_breadcrumb, breadcrumb_key=status_key
+            task_id, status, templates, source_for_breadcrumb,
+            breadcrumb_key=status_key, extra_body=extra_body,
         )
     if platform == "codex":
         parts: list[str] = []
