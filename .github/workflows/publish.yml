@@ -118,8 +118,17 @@ jobs:
             TGZ=$(ls "$published"/c12-trellis-*.tgz)
           else
             npm publish "$TGZ" --access public --provenance --tag "$NPM_TAG"
+            # A new version can take minutes to appear ("Your package is being
+            # processed"); a first publish may also be staged for approval.
+            for attempt in $(seq 1 40); do
+              [ "$(npm view "c12-trellis@$VERSION" version 2> /dev/null)" = "$VERSION" ] && break
+              if [ "$attempt" = 40 ]; then
+                echo "::error::c12-trellis@$VERSION is not visible on npm after 20 minutes. If npm staged it, approve it under Staged Packages on npmjs.com, then rerun this job."
+                exit 1
+              fi
+              sleep 30
+            done
           fi
-          test "$(npm view "c12-trellis@$VERSION" version)" = "$VERSION"
           (cd "$(dirname "$TGZ")" && sha256sum "$(basename "$TGZ")" > "$(basename "$TGZ").sha256")
           echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
 

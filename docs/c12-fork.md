@@ -53,7 +53,7 @@ Project-specific configuration (for example a repository's `.trellis/config.yaml
 
 1. In the release PR, bump `packages/cli/package.json` `version` (patch for template fixes) and add `packages/cli/src/migrations/manifests/<version>.json` with a `changelog`. Do not use a `-suffix` on top of an upstream version: Trellis treats `0.6.17-x` as older than `0.6.17` and refuses to "downgrade".
 2. After merge, tag the merge commit `v<version>` and push the tag.
-3. `publish.yml` tests, packs once, publishes `c12-trellis@<version>` to npm (secret `NPM_TOKEN`, with provenance) and attaches the tarball + `.sha256` to the GitHub Release.
+3. `publish.yml` tests, packs once, publishes `c12-trellis@<version>` to npm (secret `NPM_TOKEN`, with provenance) and attaches the tarball + `.sha256` to the GitHub Release. A new version can take a few minutes to become visible on npm; the job waits up to 20 minutes. If npm stages a publish for approval, approve it under Staged Packages on npmjs.com and rerun the job.
 4. Consumers: `npm install -g c12-trellis@<version>` (or `npx -y c12-trellis@<version> update`), then `trellis update` in each repository.
 5. A bad npm version cannot be overwritten: `npm deprecate c12-trellis@<version> "<reason>"` and release the next patch.
 
