@@ -27,6 +27,16 @@ An upstream CLI's `trellis upgrade` still installs `@mindfoldhq/trellis`; switch
 
 Every release also attaches the same tarball and its sha256 to the GitHub Release, for consumers that pin by checksum.
 
+## Tracked files and personal customization
+
+Consumer repositories commit the Trellis-managed files: `.trellis/` (scripts, `workflow.md`, `.version`, `.template-hashes.json`), the Trellis hooks, `settings.json`, `commands/trellis/`, `agents/trellis-*` and `skills/trellis-*` under `.claude/`, and the corresponding files under `.codex/` and `.agents/`. The committed copy is the team's single shared version.
+
+- **Never gitignore a Trellis-managed file.** Nothing installs these files per clone, and `trellis update` treats a hash-tracked file that is missing as "Deleted by you" and never restores it, not even with `--force`. An ignored file is therefore simply absent for everyone.
+- **Change them only through the fork.** Edit the template here, release, then run `npx -y c12-trellis@<version> update` in each repository and open a PR. Do not hand-edit them in a repository.
+- **Repository-specific edits** are limited to project configuration: `.codex/config.toml`, `.codex/hooks.json`, `.trellis/config.yaml`, and `AGENTS.md` outside the Trellis-managed block. They show as "Modified by you" on every update; keep them deliberate and say why in the PR.
+- **Personal customization stays out of git**: Claude Code's `.claude/settings.local.json` and `CLAUDE.local.md` (both gitignored in every repository), and Codex's user-level `~/.codex/config.toml`. Never force-add them.
+- **Team skills, rules and agents** delivered by teamai (`ichor team`) are excluded per clone through `.git/info/exclude` and are not committed either.
+
 ## What the fork changes
 
 Kept as small as possible so upstream fixes merge cleanly.
